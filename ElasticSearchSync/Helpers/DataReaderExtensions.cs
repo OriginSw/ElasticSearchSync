@@ -294,7 +294,7 @@ namespace ElasticSearchSync.Helpers
 
         private static Dictionary<string, object> SerializeXml(string data)
         {
-            if (String.IsNullOrEmpty(data))
+            if (string.IsNullOrEmpty(data))
                 return null;
 
             XmlDocument xml = new XmlDocument();

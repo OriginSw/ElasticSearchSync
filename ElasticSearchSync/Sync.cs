@@ -32,14 +32,14 @@ namespace ElasticSearchSync
         {
             _config = config;
             log4net.Config.XmlConfigurator.Configure();
-            log = log4net.LogManager.GetLogger(String.Format("SQLSERVER-ES Sync - {0}/{1}", config._Index.Name, config._Type));
+            log = log4net.LogManager.GetLogger(string.Format("SQLSERVER-ES Sync - {0}/{1}", config._Index.Name, config._Type));
             stopwatch = new Stopwatch();
 
-            var indexNameForLogTypes = String.IsNullOrEmpty(config._Index.Alias) ? config._Index.Name : config._Index.Alias;
-            LogType = String.Format("{0}_{1}_{2}", LogType, indexNameForLogTypes, _config._Type);
-            BulkLogType = String.Format("{0}_{1}_{2}", BulkLogType, indexNameForLogTypes, _config._Type);
-            LockType = String.Format("{0}_{1}_{2}", LockType, indexNameForLogTypes, _config._Type);
-            LastLogType = String.Format("{0}_{1}_{2}", LastLogType, indexNameForLogTypes, _config._Type);
+            var indexNameForLogTypes = string.IsNullOrEmpty(config._Index.Alias) ? config._Index.Name : config._Index.Alias;
+            LogType = string.Format("{0}_{1}_{2}", LogType, indexNameForLogTypes, _config._Type);
+            BulkLogType = string.Format("{0}_{1}_{2}", BulkLogType, indexNameForLogTypes, _config._Type);
+            LockType = string.Format("{0}_{1}_{2}", LockType, indexNameForLogTypes, _config._Type);
+            LastLogType = string.Format("{0}_{1}_{2}", LastLogType, indexNameForLogTypes, _config._Type);
         }
 
         public SyncResponse Exec(bool force = false)
@@ -53,7 +53,7 @@ namespace ElasticSearchSync
                 using (var _lock = new SyncLock(client, LogIndex, LockType, force))
                 {
                     DateTime? lastSyncDate = ConfigureIncrementalProcess(_config.SqlCommand, _config.ColumnsToCompareWithLastSyncDate);
-                    log.Info(String.Format("last sync date: {0}", lastSyncDate != null ? lastSyncDate.ToString() : "null"));
+                    log.Info(string.Format("last sync date: {0}", lastSyncDate != null ? lastSyncDate.ToString() : "null"));
 
                     var syncResponse = new SyncResponse(startedOn);
 
@@ -105,7 +105,7 @@ namespace ElasticSearchSync
                                     var pageDataCount = pageData.Count();
                                     dataCount += pageDataCount;
 
-                                    log.Info(String.Format("{0} objects have been serialized from page {1}.", pageDataCount, page));
+                                    log.Info(string.Format("{0} objects have been serialized from page {1}.", pageDataCount, page));
 
                                     IndexProcess(pageData, syncResponse);
 
@@ -126,7 +126,7 @@ namespace ElasticSearchSync
                                 IndexProcess(data, syncResponse);
                             }
 
-                            log.Info(String.Format("{0} objects have been serialized.", dataCount));
+                            log.Info(string.Format("{0} objects have been serialized.", dataCount));
                         }
                         finally
                         {
@@ -137,7 +137,7 @@ namespace ElasticSearchSync
                     //LOG PROCESS
                     syncResponse = LogProcess(syncResponse);
 
-                    log.Debug(String.Format("process duration: {0}ms", Math.Truncate((syncResponse.EndedOn - syncResponse.StartedOn).TotalMilliseconds)));
+                    log.Debug(string.Format("process duration: {0}ms", Math.Truncate((syncResponse.EndedOn - syncResponse.StartedOn).TotalMilliseconds)));
 
                     return syncResponse;
                 }
@@ -160,7 +160,10 @@ namespace ElasticSearchSync
                 {
                     var lastSyncResponse = GetLastSync();
                     if (lastSyncResponse == null || lastSyncResponse.Response == null || (bool)lastSyncResponse.Response["found"] == false)
+                    {
+                        sqlCommand.CommandText = sqlCommand.CommandText.Replace("{0}", "");
                         return null;
+                    }
 
                     lastSyncDate = DateTime.Parse(lastSyncResponse.Response["_source"]["date"]).ToUniversalTime();
                 }
@@ -174,7 +177,13 @@ namespace ElasticSearchSync
                         .Append("' OR ");
                 conditionBuilder.RemoveLastCharacters(4).Append(")");
 
-                sqlCommand.CommandText = AddSqlCondition(sqlCommand.CommandText, conditionBuilder.ToString());
+                if (sqlCommand.CommandText.Contains("{0}"))
+                {
+                    conditionBuilder.Insert(0, " AND ");
+                    sqlCommand.CommandText = string.Format(sqlCommand.CommandText, conditionBuilder.ToString());
+                }
+                else
+                    sqlCommand.CommandText = AddSqlCondition(sqlCommand.CommandText, conditionBuilder.ToString());
             }
 
             return lastSyncDate;
@@ -192,7 +201,7 @@ namespace ElasticSearchSync
             { }
 
             stopwatch.Stop();
-            log.Info(String.Format("last sync search duration: {0}ms", stopwatch.ElapsedMilliseconds));
+            log.Info(string.Format("last sync search duration: {0}ms", stopwatch.ElapsedMilliseconds));
             stopwatch.Reset();
 
             return lastSyncResponse;
@@ -218,7 +227,7 @@ namespace ElasticSearchSync
                 syncResponse.IndexedDocuments += bulkResponse.AffectedDocuments;
                 syncResponse.Success = syncResponse.Success && bulkResponse.Success;
 
-                log.Info(String.Format("bulk duration: {0}ms. so far {1} documents have been indexed successfully.", bulkResponse.Duration, syncResponse.IndexedDocuments));
+                log.Info(string.Format("bulk duration: {0}ms. so far {1} documents have been indexed successfully.", bulkResponse.Duration, syncResponse.IndexedDocuments));
                 c += _config.BulkSize;
             }
 
@@ -243,7 +252,7 @@ namespace ElasticSearchSync
                 syncResponse.DeletedDocuments += bulkResponse.AffectedDocuments;
                 syncResponse.Success = syncResponse.Success && bulkResponse.Success;
 
-                log.Info(String.Format("bulk duration: {0}ms. so far {1} documents have been deleted successfully.", bulkResponse.Duration, syncResponse.DeletedDocuments));
+                log.Info(string.Format("bulk duration: {0}ms. so far {1} documents have been deleted successfully.", bulkResponse.Duration, syncResponse.DeletedDocuments));
                 d += _config.BulkSize;
             }
 
@@ -333,7 +342,7 @@ namespace ElasticSearchSync
             client.Bulk(logBulk);
 
             stopwatch.Stop();
-            log.Info(String.Format("log index duration: {0}ms", stopwatch.ElapsedMilliseconds));
+            log.Info(string.Format("log index duration: {0}ms", stopwatch.ElapsedMilliseconds));
             stopwatch.Reset();
 
             return syncResponse;
@@ -348,7 +357,7 @@ namespace ElasticSearchSync
             using (SqlDataReader rdr = _config.SqlCommand.ExecuteReader(CommandBehavior.SequentialAccess))
             {
                 stopwatch.Stop();
-                log.Info(String.Format("sql execute reader duration: {0}ms", stopwatch.ElapsedMilliseconds));
+                log.Info(string.Format("sql execute reader duration: {0}ms", stopwatch.ElapsedMilliseconds));
                 stopwatch.Reset();
 
                 data = rdr.Serialize(_config.XmlFields);
@@ -365,13 +374,13 @@ namespace ElasticSearchSync
                 cmd.CommandTimeout = 0;
 
                 if (_config.PageSize.HasValue)
-                    cmd.CommandText = AddSqlCondition(cmd.CommandText, String.Format("_id IN ({0})", String.Join(",", dataIds)));
+                    cmd.CommandText = AddSqlCondition(cmd.CommandText, string.Format("_id IN ({0})", string.Join(",", dataIds)));
 
                 stopwatch.Start();
                 using (SqlDataReader rdr = cmd.ExecuteReader(CommandBehavior.SequentialAccess))
                 {
                     stopwatch.Stop();
-                    log.Info(String.Format("array sql execute reader duration: {0}ms", stopwatch.ElapsedMilliseconds));
+                    log.Info(string.Format("array sql execute reader duration: {0}ms", stopwatch.ElapsedMilliseconds));
                     stopwatch.Reset();
 
                     data = rdr.SerializeArray(data, arrayConfig.AttributeName, arrayConfig.XmlFields, arrayConfig.InsertIntoArrayComparerKey);
@@ -384,13 +393,13 @@ namespace ElasticSearchSync
                 cmd.CommandTimeout = 0;
 
                 if (_config.PageSize.HasValue)
-                    cmd.CommandText = AddSqlCondition(cmd.CommandText, String.Format("_id IN ({0})", String.Join(",", dataIds)));
+                    cmd.CommandText = AddSqlCondition(cmd.CommandText, string.Format("_id IN ({0})", string.Join(",", dataIds)));
 
                 stopwatch.Start();
                 using (SqlDataReader rdr = cmd.ExecuteReader(CommandBehavior.SequentialAccess))
                 {
                     stopwatch.Stop();
-                    log.Info(String.Format("object sql execute reader duration: {0}ms", stopwatch.ElapsedMilliseconds));
+                    log.Info(string.Format("object sql execute reader duration: {0}ms", stopwatch.ElapsedMilliseconds));
                     stopwatch.Reset();
 
                     data = rdr.SerializeObject(data, objectConfig.AttributeName, objectConfig.InsertIntoArrayComparerKey);
