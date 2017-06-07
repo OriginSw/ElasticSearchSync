@@ -298,7 +298,15 @@ namespace ElasticSearchSync.Helpers
                 return null;
 
             XmlDocument xml = new XmlDocument();
-            xml.LoadXml(data);
+
+            try
+            {
+                xml.LoadXml(data);
+            }
+            catch (XmlException ex)
+            {
+                log4net.LogManager.GetLogger(typeof(DataReaderExtensions)).Warn(string.Format("Error parsing the data to an XML Document - {0} - Data: {1}", ex.Message, data));
+            }
 
             RemoveCdata(xml);
 
