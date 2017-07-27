@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -47,106 +48,133 @@ namespace ElasticSearchSync
             try
             {
                 var startedOn = DateTime.UtcNow;
+                var syncResponse = new SyncResponse(startedOn);
                 log.Debug("process started at " + startedOn.NormalizedFormat());
                 client = new ElasticsearchClient(_config.ElasticSearchConfiguration);
 
-                using (var _lock = new SyncLock(client, LogIndex, LockType, force))
-                {
-                    DateTime? lastSyncDate = ConfigureIncrementalProcess(_config.SqlCommand, _config.ColumnsToCompareWithLastSyncDate);
-                    log.Info(string.Format("last sync date: {0}", lastSyncDate != null ? lastSyncDate.ToString() : "null"));
-
-                    var syncResponse = new SyncResponse(startedOn);
-
-                    //DELETE PROCESS
-                    if (_config.DeleteConfiguration != null)
+                if (ValidatePeriodicity(client, LogIndex, LastLogType))
+                    using (var _lock = new SyncLock(client, LogIndex, LockType, force))
                     {
-                        _config.SqlConnection.Open();
-                        Dictionary<object, Dictionary<string, object>> deleteData = null;
+                        DateTime? lastSyncDate = ConfigureIncrementalProcess(_config.SqlCommand, _config.ColumnsToCompareWithLastSyncDate);
+                        log.Info(string.Format("last sync date: {0}", lastSyncDate != null ? lastSyncDate.ToString() : "null"));
 
-                        if (lastSyncDate != null)
-                            ConfigureIncrementalProcess(_config.DeleteConfiguration.SqlCommand, _config.DeleteConfiguration.ColumnsToCompareWithLastSyncDate, lastSyncDate);
-
-                        using (SqlDataReader rdr = _config.DeleteConfiguration.SqlCommand.ExecuteReader())
-                        {
-                            deleteData = rdr.Serialize();
-                        }
-                        _config.SqlConnection.Close();
-
-                        syncResponse = DeleteProcess(deleteData, syncResponse);
-                    }
-
-                    //INDEX PROCESS
-                    if (_config.SqlCommand != null)
-                    {
-                        var dataCount = 0;
-                        try
+                        //DELETE PROCESS
+                        if (_config.DeleteConfiguration != null)
                         {
                             _config.SqlConnection.Open();
-                            if (_config.PageSize.HasValue)
+                            Dictionary<object, Dictionary<string, object>> deleteData = null;
+
+                            if (lastSyncDate != null)
+                                ConfigureIncrementalProcess(_config.DeleteConfiguration.SqlCommand, _config.DeleteConfiguration.ColumnsToCompareWithLastSyncDate, lastSyncDate);
+
+                            using (SqlDataReader rdr = _config.DeleteConfiguration.SqlCommand.ExecuteReader())
                             {
-                                var page = 0;
-                                var size = _config.PageSize;
-                                var commandText = _config.SqlCommand.CommandText;
-
-                                while (true)
-                                {
-                                    var conditionBuilder = new StringBuilder("(");
-                                    conditionBuilder
-                                        .Append("RowNumber BETWEEN ")
-                                        .Append(page * size + 1)
-                                        .Append(" AND ")
-                                        .Append(page * size + size)
-                                        .Append(")");
-
-                                    _config.SqlCommand.CommandText = AddSqlCondition(commandText, conditionBuilder.ToString());
-
-                                    var pageData = GetSerializedObject();
-
-                                    var pageDataCount = pageData.Count();
-                                    dataCount += pageDataCount;
-
-                                    log.Info(string.Format("{0} objects have been serialized from page {1}.", pageDataCount, page));
-
-                                    IndexProcess(pageData, syncResponse);
-
-                                    pageData.Clear();
-                                    pageData = null;
-                                    GC.Collect(GC.MaxGeneration);
-
-                                    if (pageDataCount < size)
-                                        break;
-
-                                    page++;
-                                }
+                                deleteData = rdr.Serialize();
                             }
-                            else
-                            {
-                                var data = GetSerializedObject();
-                                dataCount = data.Count();
-                                IndexProcess(data, syncResponse);
-                            }
-
-                            log.Info(string.Format("{0} objects have been serialized.", dataCount));
-                        }
-                        finally
-                        {
                             _config.SqlConnection.Close();
+
+                            syncResponse = DeleteProcess(deleteData, syncResponse);
                         }
+
+                        //INDEX PROCESS
+                        if (_config.SqlCommand != null)
+                        {
+                            var dataCount = 0;
+                            try
+                            {
+                                _config.SqlConnection.Open();
+                                if (_config.PageSize.HasValue)
+                                {
+                                    var page = 0;
+                                    var size = _config.PageSize;
+                                    var commandText = _config.SqlCommand.CommandText;
+
+                                    while (true)
+                                    {
+                                        var conditionBuilder = new StringBuilder("(");
+                                        conditionBuilder
+                                            .Append("RowNumber BETWEEN ")
+                                            .Append(page * size + 1)
+                                            .Append(" AND ")
+                                            .Append(page * size + size)
+                                            .Append(")");
+
+                                        _config.SqlCommand.CommandText = AddSqlCondition(commandText, conditionBuilder.ToString());
+
+                                        var pageData = GetSerializedObject();
+
+                                        var pageDataCount = pageData.Count();
+                                        dataCount += pageDataCount;
+
+                                        log.Info(string.Format("{0} objects have been serialized from page {1}.", pageDataCount, page));
+
+                                        IndexProcess(pageData, syncResponse);
+
+                                        pageData.Clear();
+                                        pageData = null;
+                                        GC.Collect(GC.MaxGeneration);
+
+                                        if (pageDataCount < size)
+                                            break;
+
+                                        page++;
+                                    }
+                                }
+                                else
+                                {
+                                    var data = GetSerializedObject();
+                                    dataCount = data.Count();
+                                    IndexProcess(data, syncResponse);
+                                }
+
+                                log.Info(string.Format("{0} objects have been serialized.", dataCount));
+                            }
+                            finally
+                            {
+                                _config.SqlConnection.Close();
+                            }
+                        }
+
+                        //LOG PROCESS
+                        syncResponse = LogProcess(syncResponse);
+
+                        log.Debug(string.Format("process duration: {0}ms", Math.Truncate((syncResponse.EndedOn - syncResponse.StartedOn).TotalMilliseconds)));
                     }
-
-                    //LOG PROCESS
-                    syncResponse = LogProcess(syncResponse);
-
-                    log.Debug(string.Format("process duration: {0}ms", Math.Truncate((syncResponse.EndedOn - syncResponse.StartedOn).TotalMilliseconds)));
-
-                    return syncResponse;
-                }
+                return syncResponse;
             }
             catch (Exception ex)
             {
                 log.Error("an error has occurred: " + ex);
                 throw ex;
             }
+        }
+
+        private bool ValidatePeriodicity(ElasticsearchClient client, string index, string type)
+        {
+            const string _id = "1";
+            var minPeriod = ConfigSection.Default.Periodicity.MinPeriod;
+
+            if (minPeriod == null)
+                return true;
+
+            var _lastLog = client.Get(index, type, _id);
+            if (_lastLog.HttpStatusCode == 404 || !bool.Parse(_lastLog.Response["found"]))
+            {
+                return true;
+            }
+            else
+            {
+                DateTime logDate = DateTime.ParseExact(
+                    _lastLog.Response["_source"].date,
+                    "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal |
+                    DateTimeStyles.AdjustToUniversal);
+
+                if (DateTime.UtcNow - logDate >= minPeriod)
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>

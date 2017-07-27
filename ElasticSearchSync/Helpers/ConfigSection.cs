@@ -28,6 +28,14 @@ namespace ElasticSearchSync.Helpers
             set { this["concurrency"] = value; }
         }
 
+        [IgnoreDataMember]
+        [ConfigurationProperty("periodicity")]
+        public PeriodicityConfigurationElement Periodicity
+        {
+            get { return (PeriodicityConfigurationElement)this["periodicity"]; }
+            set { this["periodicity"] = value; }
+        }
+
         [DataContract]
         public class IndexConfigurationElement : ConfigurationElement
         {
@@ -57,6 +65,18 @@ namespace ElasticSearchSync.Helpers
             {
                 get { return (TimeSpan)this["duration"]; }
                 set { this["duration"] = value; }
+            }
+        }
+
+        [DataContract]
+        public class PeriodicityConfigurationElement : ConfigurationElement
+        {
+            [DataMember]
+            [ConfigurationProperty("minPeriod", IsRequired = false)]
+            public TimeSpan? MinPeriod
+            {
+                get { return (TimeSpan?)this["minPeriod"]; }
+                set { this["minPeriod"] = value; }
             }
         }
     }
