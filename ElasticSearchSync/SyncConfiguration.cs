@@ -1,4 +1,4 @@
-﻿using Elasticsearch.Net.Connection;
+﻿using Elasticsearch.Net;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 

@@ -1,5 +1,6 @@
 ﻿using Bardock.Utils.Extensions;
 using Elasticsearch.Net;
+using ElasticSearchSync.DTO;
 using ElasticSearchSync.Helpers;
 using System;
 using System.Collections.Generic;
@@ -15,7 +16,7 @@ namespace ElasticSearchSync
 {
     public class Sync
     {
-        public ElasticsearchClient client { get; set; }
+        public ElasticLowLevelClient client { get; set; }
 
         public log4net.ILog log { get; set; }
 
@@ -50,7 +51,7 @@ namespace ElasticSearchSync
                 var startedOn = DateTime.UtcNow;
                 var syncResponse = new SyncResponse(startedOn);
                 log.Debug("process started at " + startedOn.NormalizedFormat());
-                client = new ElasticsearchClient(_config.ElasticSearchConfiguration);
+                client = new ElasticLowLevelClient(_config.ElasticSearchConfiguration);
 
                 if (ValidatePeriodicity(client, LogIndex, LastLogType))
                     using (var _lock = new SyncLock(client, LogIndex, LockType, force))
@@ -149,7 +150,7 @@ namespace ElasticSearchSync
             }
         }
 
-        private bool ValidatePeriodicity(ElasticsearchClient client, string index, string type)
+        private bool ValidatePeriodicity(ElasticLowLevelClient client, string index, string type)
         {
             const string _id = "1";
             var minPeriod = ConfigSection.Default.Periodicity.MinPeriod;
@@ -157,15 +158,15 @@ namespace ElasticSearchSync
             if (minPeriod == null)
                 return true;
 
-            var _lastLog = client.Get(index, type, _id);
-            if (_lastLog.HttpStatusCode == 404 || !bool.Parse(_lastLog.Response["found"]))
+            var _lastLog = client.Get<GetResponseDTO>(index, type, _id);
+            if (_lastLog.HttpStatusCode == 404 || (!_lastLog.Body.found))
             {
                 return true;
             }
             else
             {
                 DateTime logDate = DateTime.ParseExact(
-                    _lastLog.Response["_source"].date,
+                     _lastLog.Body._source.date,
                     "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
                     CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal |
@@ -187,13 +188,13 @@ namespace ElasticSearchSync
                 if (lastSyncDate == null)
                 {
                     var lastSyncResponse = GetLastSync();
-                    if (lastSyncResponse == null || lastSyncResponse.Response == null || (bool)lastSyncResponse.Response["found"] == false)
+                    if (lastSyncResponse == null || lastSyncResponse.Body == null || lastSyncResponse.Body.found == false)
                     {
                         sqlCommand.CommandText = sqlCommand.CommandText.Replace("{0}", "");
                         return null;
                     }
 
-                    lastSyncDate = DateTime.Parse(lastSyncResponse.Response["_source"]["date"]).ToUniversalTime();
+                    lastSyncDate = DateTime.Parse(lastSyncResponse.Body._source.date).ToUniversalTime();
                 }
 
                 var conditionBuilder = new StringBuilder("(");
@@ -217,13 +218,13 @@ namespace ElasticSearchSync
             return lastSyncDate;
         }
 
-        private ElasticsearchResponse<DynamicDictionary> GetLastSync()
+        private ElasticsearchResponse<GetResponseDTO> GetLastSync()
         {
             stopwatch.Start();
-            ElasticsearchResponse<DynamicDictionary> lastSyncResponse = null;
+            ElasticsearchResponse<GetResponseDTO> lastSyncResponse = null;
             try
             {
-                lastSyncResponse = client.Get(LogIndex, LastLogType, LastLogID);
+                lastSyncResponse = client.Get<GetResponseDTO>(LogIndex, LastLogType, LastLogID);
             }
             catch (WebException)
             { }
@@ -299,14 +300,14 @@ namespace ElasticSearchSync
             foreach (var bulkData in data)
                 partialBulkBuilder.Append(getPartialBulk(_config._Index.Name, _config._Type, bulkData.Key, bulkData.Value));
 
-            var response = client.Bulk(partialBulkBuilder.ToString());
+            var response = client.Bulk<dynamic>(partialBulkBuilder.ToString());
             stopwatch.Stop();
 
             var bulkResponse = new BulkResponse
             {
                 Success = response.Success,
                 HttpStatusCode = response.HttpStatusCode,
-                AffectedDocuments = response.Response["items"].HasValue ? ((object[])response.Response["items"].Value).Length : 0,
+                AffectedDocuments = response.Body.items != null ? response.Body.items.Count : 0,
                 ESexception = response.OriginalException,
                 StartedOn = bulkStartedOn,
                 Duration = stopwatch.ElapsedMilliseconds
@@ -325,7 +326,7 @@ namespace ElasticSearchSync
         /// </summary>
         private void LogBulk(BulkResponse bulkResponse)
         {
-            client.Index(LogIndex, BulkLogType, new
+            client.Index<dynamic>(LogIndex, BulkLogType, new
             {
                 success = bulkResponse.Success,
                 httpStatusCode = bulkResponse.HttpStatusCode,
@@ -367,7 +368,7 @@ namespace ElasticSearchSync
                     date = syncResponse.StartedOn
                 });
             }
-            client.Bulk(logBulk);
+            client.Bulk<dynamic>(logBulk);
 
             stopwatch.Stop();
             log.Info(string.Format("log index duration: {0}ms", stopwatch.ElapsedMilliseconds));

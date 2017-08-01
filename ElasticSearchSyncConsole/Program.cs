@@ -1,5 +1,4 @@
-﻿using Elasticsearch.Net.Connection;
-using Elasticsearch.Net.ConnectionPool;
+﻿using Elasticsearch.Net;
 using ElasticSearchSync;
 using System;
 using System.Collections.Generic;
@@ -57,7 +56,7 @@ namespace ElasticSearchSyncConsole
                         new Uri("http://localhost:9201")
                     };
                 var connectionPool = new SniffingConnectionPool(nodes);
-                var esConfig = new ConnectionConfiguration(connectionPool).UsePrettyResponses();
+                var esConfig = new ConnectionConfiguration(connectionPool).PrettyJson();
 
                 var syncConfig = new SyncConfiguration()
                 {
