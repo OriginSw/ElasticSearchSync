@@ -55,6 +55,11 @@ namespace ElasticSearchSync
         /// </summary>
         public string _Type { get; set; }
 
+        /// <summary>
+        /// Elasticsearch index for logging
+        /// </summary>
+        public string LogIndex { get; set; }
+
         public SyncConfiguration()
         {
             BulkSize = 1000;

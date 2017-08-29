@@ -2,6 +2,8 @@
 using Elasticsearch.Net;
 using ElasticSearchSync.DTO;
 using ElasticSearchSync.Helpers;
+using log4net;
+using log4net.Config;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -18,7 +20,7 @@ namespace ElasticSearchSync
     {
         public ElasticLowLevelClient client { get; set; }
 
-        public log4net.ILog log { get; set; }
+        public ILog log { get; set; }
 
         private Stopwatch stopwatch { get; set; }
 
@@ -33,8 +35,11 @@ namespace ElasticSearchSync
         public Sync(SyncConfiguration config)
         {
             _config = config;
-            log4net.Config.XmlConfigurator.Configure();
-            log = log4net.LogManager.GetLogger(string.Format("SQLSERVER-ES Sync - {0}/{1}", config._Index.Name, config._Type));
+
+            LogIndex = string.IsNullOrEmpty(config.LogIndex) ? (ConfigSection.Default.Index.Name ?? "sqlserver_es_sync") : config.LogIndex;
+
+            XmlConfigurator.Configure();
+            log = LogManager.GetLogger(string.Format("SQLSERVER-ES Sync - {0}/{1}", config._Index.Name, config._Type));
             stopwatch = new Stopwatch();
 
             var indexNameForLogTypes = string.IsNullOrEmpty(config._Index.Alias) ? config._Index.Name : config._Index.Alias;
