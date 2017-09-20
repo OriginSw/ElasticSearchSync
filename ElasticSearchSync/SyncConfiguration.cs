@@ -60,6 +60,11 @@ namespace ElasticSearchSync
         /// </summary>
         public string LogIndex { get; set; }
 
+        /// <summary>
+        /// Parent id for child objects of parent-child relationships
+        /// </summary>
+        public string Parent { get; set; }
+
         public SyncConfiguration()
         {
             BulkSize = 1000;

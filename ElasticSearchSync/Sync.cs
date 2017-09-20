@@ -241,11 +241,6 @@ namespace ElasticSearchSync
             return lastSyncResponse;
         }
 
-        private BulkResponse BulkIndexProcess(Dictionary<object, Dictionary<string, object>> data)
-        {
-            return BulkProcess(data, ElasticsearchHelpers.GetPartialIndexBulk);
-        }
-
         private SyncResponse IndexProcess(Dictionary<object, Dictionary<string, object>> data, SyncResponse syncResponse)
         {
             var c = 0;
@@ -253,7 +248,7 @@ namespace ElasticSearchSync
             {
                 var partialData = data.Skip(c).Take(_config.BulkSize).ToDictionary(x => x.Key, x => x.Value);
 
-                var bulkResponse = BulkIndexProcess(partialData);
+                var bulkResponse = BulkProcess(partialData, ElasticsearchHelpers.GetPartialIndexBulk);
 
                 if (ConfigSection.Default.Index.LogBulk)
                     syncResponse.BulkResponses.Add(bulkResponse);
@@ -268,11 +263,6 @@ namespace ElasticSearchSync
             return syncResponse;
         }
 
-        private BulkResponse BulkDeleteProcess(Dictionary<object, Dictionary<string, object>> data)
-        {
-            return BulkProcess(data, ElasticsearchHelpers.GetPartialDeleteBulk);
-        }
-
         private SyncResponse DeleteProcess(Dictionary<object, Dictionary<string, object>> data, SyncResponse syncResponse)
         {
             var d = 0;
@@ -280,7 +270,7 @@ namespace ElasticSearchSync
             {
                 var partialData = data.Skip(d).Take(_config.BulkSize).ToDictionary(x => x.Key, x => x.Value);
 
-                var bulkResponse = BulkDeleteProcess(partialData);
+                var bulkResponse = BulkProcess(partialData, ElasticsearchHelpers.GetPartialDeleteBulk);
 
                 syncResponse.BulkResponses.Add(bulkResponse);
                 syncResponse.DeletedDocuments += bulkResponse.AffectedDocuments;
@@ -295,7 +285,7 @@ namespace ElasticSearchSync
 
         private BulkResponse BulkProcess(
             Dictionary<object, Dictionary<string, object>> data,
-            Func<string, string, object, Dictionary<string, object>, string> getPartialBulk)
+            Func<string, string, object, Dictionary<string, object>, object, string> getPartialBulk)
         {
             stopwatch.Start();
             StringBuilder partialBulkBuilder = new StringBuilder();
@@ -303,7 +293,12 @@ namespace ElasticSearchSync
 
             //build bulk data
             foreach (var bulkData in data)
-                partialBulkBuilder.Append(getPartialBulk(_config._Index.Name, _config._Type, bulkData.Key, bulkData.Value));
+            {
+                object parentId = null;
+                if (!string.IsNullOrEmpty(_config.Parent))
+                    parentId = bulkData.Value[_config.Parent];
+                partialBulkBuilder.Append(getPartialBulk(_config._Index.Name, _config._Type, bulkData.Key, bulkData.Value, parentId));
+            }
 
             var response = client.Bulk<dynamic>(partialBulkBuilder.ToString());
             stopwatch.Stop();

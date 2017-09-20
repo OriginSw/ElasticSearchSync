@@ -63,20 +63,12 @@ namespace ElasticSearchSync.Helpers
                 ((List<Dictionary<string, object>>)arrayElements[key]).Add(r);
             }
 
-            //var arrayElements = reader.Serialize(xmlFields)
-            //        .Select(x => x.Value)
-            //        .GroupBy(x => x.Values.First())
-            //        .ToDictionary(x => x.Key, x => x.Select(y => y.Skip(1).ToDictionary(w => w.Key, w => w.Value)).ToList());
             foreach (var @object in results)
             {
                 if (arrayElements.ContainsKey(@object.Key))
-                {
                     AddArray(@object.Value, arrayElements[@object.Key], attributeName, insertIntoArrayComparerKey);
-                }
                 else
-                {
                     AddArray(@object.Value, new List<Dictionary<string, object>>(), attributeName, insertIntoArrayComparerKey);
-                }
             }
 
             return results;
