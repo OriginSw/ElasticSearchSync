@@ -13,6 +13,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace ElasticSearchSync
 {
@@ -243,6 +244,9 @@ namespace ElasticSearchSync
 
         private SyncResponse IndexProcess(Dictionary<object, Dictionary<string, object>> data, SyncResponse syncResponse)
         {
+            if (_config.ExternalConsumer != null && _config.ExternalConsumer.Enable)
+                Task.Factory.StartNew(() => _config.ExternalConsumer.SendToExternal(_config._Type, _config._Index.Alias, data));
+
             var c = 0;
             while (c < data.Count())
             {

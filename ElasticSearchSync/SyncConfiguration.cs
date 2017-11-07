@@ -1,4 +1,5 @@
 ﻿using Elasticsearch.Net;
+using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 
@@ -71,6 +72,18 @@ namespace ElasticSearchSync
             ArraysConfiguration = new List<SyncArrayConfiguration>();
             ObjectsConfiguration = new List<SyncObjectConfiguration>();
         }
+
+        /// <summary>
+        /// For sending the data to an external service like an event bus
+        /// </summary>
+        public ExternalConsumer ExternalConsumer { get; set; }
+    }
+
+    public class ExternalConsumer
+    {
+        public bool Enable { get; set; }
+
+        public Action<string, string, Dictionary<object, Dictionary<string, object>>> SendToExternal { get; set; }
     }
 
     public class Index
