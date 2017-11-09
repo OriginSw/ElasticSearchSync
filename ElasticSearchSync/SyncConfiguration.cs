@@ -83,7 +83,9 @@ namespace ElasticSearchSync
     {
         public bool Enable { get; set; }
 
-        public Action<string, string, Dictionary<object, Dictionary<string, object>>> SendToExternal { get; set; }
+        public Action<string, string, Dictionary<object, Dictionary<string, object>>> SendUpsertToExternal { get; set; }
+
+        public Action<string, string, Dictionary<object, Dictionary<string, object>>> SendDeleteToExternal { get; set; }
     }
 
     public class Index
