@@ -80,7 +80,11 @@ namespace ElasticSearchSync
                             }
                             _config.SqlConnection.Close();
 
-                            syncResponse = DeleteProcess(deleteData, syncResponse);
+                            if (deleteData != null && deleteData.Any())
+                                if (_config.DeleteConfiguration.DeleteQueryFunc != null)
+                                    syncResponse = DeleteByQueryProcess(deleteData, syncResponse);
+                                else
+                                    syncResponse = DeleteProcess(deleteData, syncResponse);
                         }
 
                         //INDEX PROCESS
@@ -286,6 +290,39 @@ namespace ElasticSearchSync
                 log.Info(string.Format("bulk duration: {0}ms. so far {1} documents have been deleted successfully.", bulkResponse.Duration, syncResponse.DeletedDocuments));
                 d += _config.BulkSize;
             }
+
+            return syncResponse;
+        }
+
+        private SyncResponse DeleteByQueryProcess(Dictionary<object, Dictionary<string, object>> data, SyncResponse syncResponse)
+        {
+            stopwatch.Start();
+            var bulkStartedOn = DateTime.UtcNow;
+
+            var deleteQuery = _config.DeleteConfiguration.DeleteQueryFunc(data);
+
+            var response = client.DeleteByQuery<dynamic>(_config._Index.Name, _config._Type, deleteQuery);
+
+            stopwatch.Stop();
+
+            var bulkResponse = new BulkResponse
+            {
+                Success = response.Success,
+                HttpStatusCode = response.HttpStatusCode,
+                AffectedDocuments = Convert.ToInt32(response.Body.total),
+                ESexception = response.OriginalException,
+                StartedOn = bulkStartedOn,
+                Duration = stopwatch.ElapsedMilliseconds
+            };
+
+            syncResponse.BulkResponses.Add(bulkResponse);
+            syncResponse.DeletedDocuments += bulkResponse.AffectedDocuments;
+            syncResponse.Success = syncResponse.Success && bulkResponse.Success;
+
+            if (ConfigSection.Default.Index.LogBulk)
+                LogBulk(bulkResponse);
+
+            stopwatch.Reset();
 
             return syncResponse;
         }

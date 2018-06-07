@@ -182,3 +182,7 @@ UpgradeLog*.htm
 # Microsoft Fakes
 FakesAssemblies/
 /packages
+/.vs/ElasticSearchSync/v15/Server/sqlite3/db.lock
+/.vs/ElasticSearchSync/v15/Server/sqlite3/storage.ide
+/.vs/ElasticSearchSync/v15/Server/sqlite3/storage.ide-shm
+/.vs/ElasticSearchSync/v15/Server/sqlite3/storage.ide-wal

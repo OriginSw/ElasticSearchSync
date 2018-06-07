@@ -1,4 +1,6 @@
-﻿using System.Data.SqlClient;
+﻿using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
 
 namespace ElasticSearchSync
 {
@@ -14,5 +16,11 @@ namespace ElasticSearchSync
         /// If this property has value, process will expect the SqlCommand to have a WHERE clause
         /// </summary>
         public string[] ColumnsToCompareWithLastSyncDate { get; set; }
+
+        /// <summary>
+        /// Allows to use the function "_delete_by_query" of Elasticsearch. Must be the complete Elasticsearch query.
+        /// If null, basic delete will be used.
+        /// </summary>
+        public Func<Dictionary<object, Dictionary<string, object>>,string> DeleteQueryFunc { get; set; }
     }
 }
