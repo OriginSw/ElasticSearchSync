@@ -36,6 +36,14 @@ namespace ElasticSearchSync.Helpers
             set { this["periodicity"] = value; }
         }
 
+        [IgnoreDataMember]
+        [ConfigurationProperty("bulk")]
+        public BulkConfigurationElement Bulk
+        {
+            get { return (BulkConfigurationElement)this["bulk"]; }
+            set { this["bulk"] = value; }
+        }
+
         [DataContract]
         public class IndexConfigurationElement : ConfigurationElement
         {
@@ -77,6 +85,26 @@ namespace ElasticSearchSync.Helpers
             {
                 get { return (TimeSpan?)this["minPeriod"]; }
                 set { this["minPeriod"] = value; }
+            }
+        }
+
+        [DataContract]
+        public class BulkConfigurationElement : ConfigurationElement
+        {
+            [DataMember]
+            [ConfigurationProperty("preAllocatedMemoryBytes", IsRequired = false, DefaultValue = 100000000)]
+            public int PreAllocatedMemoryBytes
+            {
+                get { return (int)this["preAllocatedMemoryBytes"]; }
+                set { this["preAllocatedMemoryBytes"] = value; }
+            }
+
+            [DataMember]
+            [ConfigurationProperty("maxMemoryBytes", IsRequired = false, DefaultValue = 100000000)]
+            public int MaxMemoryBytes
+            {
+                get { return (int)this["maxMemoryBytes"]; }
+                set { this["maxMemoryBytes"] = value; }
             }
         }
     }

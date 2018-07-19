@@ -44,5 +44,7 @@ namespace ElasticSearchSync
         /// Bulk duration in miliseconds
         /// </summary>
         public double Duration { get; set; }
+
+        public BulkResponse InnerBulkResponse { get; set; }
     }
 }

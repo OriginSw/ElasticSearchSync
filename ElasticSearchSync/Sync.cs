@@ -332,30 +332,43 @@ namespace ElasticSearchSync
             Func<string, string, object, Dictionary<string, object>, object, string> getPartialBulk)
         {
             stopwatch.Start();
-            StringBuilder partialBulkBuilder = new StringBuilder();
+            var partialBulkBuilder = new StringBuilder(ConfigSection.Default.Bulk.PreAllocatedMemoryBytes, ConfigSection.Default.Bulk.MaxMemoryBytes);
             var bulkStartedOn = DateTime.UtcNow;
+            var bulkResponse = new BulkResponse();
 
             //build bulk data
-            foreach (var bulkData in data)
+            for (var i = 0; i < data.Count; i++)
             {
+                var bulkData = data.ElementAt(i);
                 object parentId = null;
                 if (!string.IsNullOrEmpty(_config.Parent))
                     parentId = bulkData.Value[_config.Parent];
-                partialBulkBuilder.Append(getPartialBulk(_config._Index.Name, _config._Type, bulkData.Key, bulkData.Value, parentId));
+                try
+                {
+                    partialBulkBuilder.Append(getPartialBulk(_config._Index.Name, _config._Type, bulkData.Key, bulkData.Value, parentId));
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    bulkResponse.InnerBulkResponse = BulkProcess(data.Skip(i + 1).ToDictionary(x => x.Key, y => y.Value), getPartialBulk);
+                    break;
+                }
             }
 
             var response = client.Bulk<dynamic>(partialBulkBuilder.ToString());
             stopwatch.Stop();
 
-            var bulkResponse = new BulkResponse
+            if (!response.Success)
             {
-                Success = response.Success,
-                HttpStatusCode = response.HttpStatusCode,
-                AffectedDocuments = response.Body.items != null ? response.Body.items.Count : 0,
-                ESexception = response.OriginalException,
-                StartedOn = bulkStartedOn,
-                Duration = stopwatch.ElapsedMilliseconds
-            };
+                log.Error("Error occurred in bulk request to Elasticsearch.", response.OriginalException);
+                throw response.OriginalException;
+            }
+
+            bulkResponse.Success = response.Success;
+            bulkResponse.HttpStatusCode = response.HttpStatusCode;
+            bulkResponse.AffectedDocuments = response.Body.items != null ? response.Body.items.Count : 0;
+            bulkResponse.ESexception = response.OriginalException;
+            bulkResponse.StartedOn = bulkStartedOn;
+            bulkResponse.Duration = stopwatch.ElapsedMilliseconds;
 
             if (ConfigSection.Default.Index.LogBulk)
                 LogBulk(bulkResponse);
