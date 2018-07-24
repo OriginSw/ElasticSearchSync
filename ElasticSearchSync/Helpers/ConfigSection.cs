@@ -92,15 +92,7 @@ namespace ElasticSearchSync.Helpers
         public class BulkConfigurationElement : ConfigurationElement
         {
             [DataMember]
-            [ConfigurationProperty("preAllocatedMemoryBytes", IsRequired = false, DefaultValue = 100000000)]
-            public int PreAllocatedMemoryBytes
-            {
-                get { return (int)this["preAllocatedMemoryBytes"]; }
-                set { this["preAllocatedMemoryBytes"] = value; }
-            }
-
-            [DataMember]
-            [ConfigurationProperty("maxMemoryBytes", IsRequired = false, DefaultValue = 100000000)]
+            [ConfigurationProperty("maxMemoryBytes", IsRequired = false, DefaultValue = 10000000)]
             public int MaxMemoryBytes
             {
                 get { return (int)this["maxMemoryBytes"]; }

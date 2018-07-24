@@ -4,6 +4,7 @@ using ElasticSearchSync.DTO;
 using ElasticSearchSync.Helpers;
 using log4net;
 using log4net.Config;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -265,6 +266,11 @@ namespace ElasticSearchSync
                 syncResponse.Success = syncResponse.Success && bulkResponse.Success;
 
                 log.Info(string.Format("bulk duration: {0}ms. so far {1} documents have been indexed successfully.", bulkResponse.Duration, syncResponse.IndexedDocuments));
+
+                partialData.Clear();
+                partialData = null;
+                GC.Collect(GC.MaxGeneration);
+
                 c += _config.BulkSize;
             }
 
@@ -331,11 +337,15 @@ namespace ElasticSearchSync
             Dictionary<object, Dictionary<string, object>> data,
             Func<string, string, object, Dictionary<string, object>, object, string> getPartialBulk)
         {
+            Dictionary<object, Dictionary<string, object>> innerBulkData = null;
             stopwatch.Start();
-            var partialBulkBuilder = new StringBuilder(ConfigSection.Default.Bulk.PreAllocatedMemoryBytes, ConfigSection.Default.Bulk.MaxMemoryBytes);
+            var partialBulkBuilder = new StringBuilder();
             var bulkStartedOn = DateTime.UtcNow;
             var bulkResponse = new BulkResponse();
+            string[] ids = new string[_config.BulkSize];
+            Exception exception = null;
 
+            int currentLength = 0;
             //build bulk data
             for (var i = 0; i < data.Count; i++)
             {
@@ -343,39 +353,89 @@ namespace ElasticSearchSync
                 object parentId = null;
                 if (!string.IsNullOrEmpty(_config.Parent))
                     parentId = bulkData.Value[_config.Parent];
-                try
+
+                var doc = getPartialBulk(_config._Index.Name, _config._Type, bulkData.Key, bulkData.Value, parentId);
+                currentLength += doc.Length;
+                if (currentLength < ConfigSection.Default.Bulk.MaxMemoryBytes || i == 0)
                 {
-                    partialBulkBuilder.Append(getPartialBulk(_config._Index.Name, _config._Type, bulkData.Key, bulkData.Value, parentId));
+                    ids[i] = bulkData.Key.ToString();
+                    partialBulkBuilder.Append(doc);
                 }
-                catch (ArgumentOutOfRangeException)
+                else
                 {
-                    bulkResponse.InnerBulkResponse = BulkProcess(data.Skip(i + 1).ToDictionary(x => x.Key, y => y.Value), getPartialBulk);
+                    innerBulkData = data.Skip(i).ToDictionary(x => x.Key, y => y.Value);
                     break;
                 }
             }
 
-            var response = client.Bulk<dynamic>(partialBulkBuilder.ToString());
+            Task<string> bulkLogTask = null;
+            if (ConfigSection.Default.Index.LogBulk)
+                bulkLogTask = Task.Factory.StartNew(() => InitLoggingBulk(bulkStartedOn, ids, exception));
+
+            ElasticsearchResponse<dynamic> response = null;
+            try
+            {
+                response = client.Bulk<dynamic>(partialBulkBuilder.ToString());
+            }
+            catch (Exception e)
+            {
+                if (ConfigSection.Default.Index.LogBulk)
+                {
+                    bulkResponse.Success = false;
+                    bulkResponse.ESexception = new Exception("Error occurred in bulk request to Elasticsearch.", e);
+                    bulkResponse.Duration = stopwatch.ElapsedMilliseconds;
+                    bulkLogTask.Wait();
+                    UpdateBulkLog(bulkResponse, bulkLogTask.Result, response.RequestBodyInBytes, response.ResponseBodyInBytes);
+                }
+                throw e;
+            }
             stopwatch.Stop();
 
             if (!response.Success)
             {
                 log.Error("Error occurred in bulk request to Elasticsearch.", response.OriginalException);
+                if (ConfigSection.Default.Index.LogBulk)
+                {
+                    bulkResponse.Success = false;
+                    bulkResponse.ESexception = new Exception("Error occurred in bulk request to Elasticsearch.", response.OriginalException);
+                    bulkResponse.HttpStatusCode = response.HttpStatusCode;
+                    bulkResponse.Duration = stopwatch.ElapsedMilliseconds;
+                    bulkLogTask.Wait();
+                    UpdateBulkLog(bulkResponse, bulkLogTask.Result, response.RequestBodyInBytes, response.ResponseBodyInBytes);
+                }
                 throw response.OriginalException;
             }
 
             bulkResponse.Success = response.Success;
             bulkResponse.HttpStatusCode = response.HttpStatusCode;
-            bulkResponse.AffectedDocuments = response.Body.items != null ? response.Body.items.Count : 0;
+            bulkResponse.AffectedDocuments = response.Body?.items != null ? response.Body.items.Count : 0;
             bulkResponse.ESexception = response.OriginalException;
             bulkResponse.StartedOn = bulkStartedOn;
             bulkResponse.Duration = stopwatch.ElapsedMilliseconds;
 
+            if (innerBulkData != null)
+                bulkResponse.InnerBulkResponse = BulkProcess(innerBulkData, getPartialBulk);
+
             if (ConfigSection.Default.Index.LogBulk)
-                LogBulk(bulkResponse);
+            {
+                bulkLogTask.Wait();
+                UpdateBulkLog(bulkResponse, bulkLogTask.Result);
+            }
 
             stopwatch.Reset();
 
             return bulkResponse;
+        }
+
+        public string InitLoggingBulk(DateTime bulkStartedOn, string[] ids, Exception e)
+        {
+            var response = client.Index<dynamic>(LogIndex, BulkLogType, new
+            {
+                startedOn = bulkStartedOn,
+                documentsId = ids,
+                exception = JsonConvert.SerializeObject(e),
+            });
+            return response.Body._id;
         }
 
         /// <summary>
@@ -383,14 +443,35 @@ namespace ElasticSearchSync
         /// </summary>
         private void LogBulk(BulkResponse bulkResponse)
         {
-            client.Index<dynamic>(LogIndex, BulkLogType, new
+            Task.Factory.StartNew(() =>
+                client.Index<dynamic>(LogIndex, BulkLogType, new
+                {
+                    success = bulkResponse.Success,
+                    httpStatusCode = bulkResponse.HttpStatusCode,
+                    documentsIndexed = bulkResponse.AffectedDocuments,
+                    startedOn = bulkResponse.StartedOn,
+                    duration = bulkResponse.Duration + "ms",
+                    exception = JsonConvert.SerializeObject(bulkResponse.ESexception)
+                }));
+        }
+
+        private void UpdateBulkLog(BulkResponse bulkResponse, string id, byte[] request = null, byte[] response = null)
+        {
+            Task.Factory.StartNew(() =>
             {
-                success = bulkResponse.Success,
-                httpStatusCode = bulkResponse.HttpStatusCode,
-                documentsIndexed = bulkResponse.AffectedDocuments,
-                startedOn = bulkResponse.StartedOn,
-                duration = bulkResponse.Duration + "ms",
-                exception = bulkResponse.ESexception != null ? ((Exception)bulkResponse.ESexception).Message : null
+                var elasticResponse = client.Update<dynamic>(LogIndex, BulkLogType, id, new
+                {
+                    doc = new
+                    {
+                        success = bulkResponse.Success,
+                        httpStatusCode = bulkResponse.HttpStatusCode,
+                        documentsIndexed = bulkResponse.AffectedDocuments,
+                        duration = bulkResponse.Duration + "ms",
+                        exception = JsonConvert.SerializeObject(bulkResponse.ESexception),
+                        request = JsonConvert.SerializeObject(request),
+                        response = JsonConvert.SerializeObject(response)
+                    }
+                });
             });
         }
 
@@ -414,7 +495,7 @@ namespace ElasticSearchSync
                     httpStatusCode = x.HttpStatusCode,
                     affectedDocuments = x.AffectedDocuments,
                     duration = x.Duration + "ms",
-                    exception = x.ESexception != null ? ((Exception)x.ESexception).Message : null
+                    exception = JsonConvert.SerializeObject(x.ESexception)
                 })
             });
 
