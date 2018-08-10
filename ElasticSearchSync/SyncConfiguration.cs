@@ -47,9 +47,9 @@ namespace ElasticSearchSync
         public int? PageSize { get; set; }
 
         /// <summary>
-        /// Elasticsearch index
+        /// Elasticsearch index name
         /// </summary>
-        public Index _Index { get; set; }
+        public IEnumerable<Index> _Indexes { get; set; }
 
         /// <summary>
         /// Elasticsearch type
@@ -83,9 +83,9 @@ namespace ElasticSearchSync
     {
         public bool Enable { get; set; }
 
-        public Action<string, string, Dictionary<object, Dictionary<string, object>>> SendUpsertToExternal { get; set; }
+        public Action<string, Dictionary<object, Dictionary<string, object>>> SendUpsertToExternal { get; set; }
 
-        public Action<string, string, Dictionary<object, Dictionary<string, object>>> SendDeleteToExternal { get; set; }
+        public Action<string, Dictionary<object, Dictionary<string, object>>> SendDeleteToExternal { get; set; }
     }
 
     public class Index
@@ -96,8 +96,8 @@ namespace ElasticSearchSync
 
         public Index(string name, string alias = null)
         {
-            this.Name = name;
-            this.Alias = alias;
+            Name = name;
+            Alias = alias;
         }
     }
 }

@@ -29,14 +29,6 @@ namespace ElasticSearchSync.Helpers
         }
 
         [IgnoreDataMember]
-        [ConfigurationProperty("periodicity")]
-        public PeriodicityConfigurationElement Periodicity
-        {
-            get { return (PeriodicityConfigurationElement)this["periodicity"]; }
-            set { this["periodicity"] = value; }
-        }
-
-        [IgnoreDataMember]
         [ConfigurationProperty("bulk")]
         public BulkConfigurationElement Bulk
         {
@@ -73,18 +65,6 @@ namespace ElasticSearchSync.Helpers
             {
                 get { return (TimeSpan)this["duration"]; }
                 set { this["duration"] = value; }
-            }
-        }
-
-        [DataContract]
-        public class PeriodicityConfigurationElement : ConfigurationElement
-        {
-            [DataMember]
-            [ConfigurationProperty("minPeriod", IsRequired = false)]
-            public TimeSpan? MinPeriod
-            {
-                get { return (TimeSpan?)this["minPeriod"]; }
-                set { this["minPeriod"] = value; }
             }
         }
 

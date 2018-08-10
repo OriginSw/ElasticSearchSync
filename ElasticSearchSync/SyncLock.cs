@@ -14,15 +14,15 @@ namespace ElasticSearchSync
 
         public string LockIndex { get; set; }
 
-        public string LockType { get; set; }
+        public string[] LockTypes { get; set; }
 
         public bool Force { get; set; }
 
-        public SyncLock(ElasticLowLevelClient client, string index, string type, bool force = false)
+        public SyncLock(ElasticLowLevelClient client, string index, string[] types, bool force = false)
         {
             Client = client;
             LockIndex = index;
-            LockType = type;
+            LockTypes = types;
             Force = force;
 
             Open();
@@ -38,32 +38,36 @@ namespace ElasticSearchSync
                 date = DateTime.UtcNow
             };
 
-            var _lock = Client.Get<GetResponseDTO>(LockIndex, LockType, _id);
-            if (_lock.HttpStatusCode == 404 || !_lock.Body.found)
+            foreach (var type in LockTypes)
             {
-                IndexLock(body);
-            }
-            else
-            {
-                DateTime lockDate = DateTime.ParseExact(
-                    _lock.Body._source.date,
-                    "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal |
-                    DateTimeStyles.AdjustToUniversal);
-                var duration = ConfigSection.Default.Concurrency.Duration;
+                ElasticsearchResponse<GetResponseDTO> _lock;
+                _lock = Client.Get<GetResponseDTO>(LockIndex, type, _id);
+                if (_lock.HttpStatusCode == 404 || !_lock.Body.found)
+                {
+                    IndexLock(type, body);
+                }
+                else
+                {
+                    DateTime lockDate = DateTime.ParseExact(
+                        _lock.Body._source.date,
+                        "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeUniversal |
+                        DateTimeStyles.AdjustToUniversal);
+                    var duration = ConfigSection.Default.Concurrency.Duration;
 
-                if (duration == null || lockDate + duration >= body.date)
-                    throw new SyncConcurrencyException();
+                    if (duration == null || lockDate + duration >= body.date)
+                        throw new SyncConcurrencyException();
 
-                Client.Delete<dynamic>(LockIndex, LockType, _id);
-                IndexLock(body);
+                    Client.Delete<dynamic>(LockIndex, type, _id);
+                    IndexLock(type, body);
+                }
             }
         }
 
-        private void IndexLock(object body)
+        private void IndexLock(string type, object body)
         {
-            var indexLock = Client.Index<dynamic>(LockIndex, LockType, _id, body, q => q.OpType(OpType.Create));
+            var indexLock = Client.Index<dynamic>(LockIndex, type, _id, body, q => q.OpType(OpType.Create));
             if (!indexLock.Success)
                 throw new SyncConcurrencyException(indexLock.OriginalException.Message);
         }
@@ -73,9 +77,12 @@ namespace ElasticSearchSync
             if (Force)
                 return;
 
-            var d = Client.Delete<dynamic>(LockIndex, LockType, _id);
-            if (!d.Success)
-                throw new Exception(d.OriginalException.Message);
+            foreach (var type in LockTypes)
+            {
+                var response = Client.Delete<dynamic>(LockIndex, type, _id);
+                if (!response.Success)
+                    throw new Exception(response.OriginalException.Message);
+            }
         }
 
         public class SyncConcurrencyException : Exception
